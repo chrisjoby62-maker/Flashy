@@ -4,7 +4,7 @@ local lookAtCFrame, getPlayersCached, waitForCharacterReady, carryController, co
 local velocityHookedRoots, registerVelocityRoot, installVelocityReadHook, isHumanoidRagdolled, applyMovementVelocity, applyAnimationPack, disableAnimationPack, autoStealConnection, autoStealState, autoStealBusy
 local getAutoStealVariantName, getAutoStealVariantIndex, teleportDown, antiRagdollController, antiRagdollV2State, enableAntiRagdollV2, disableAntiRagdollV2, antiDie, reapplyAntiDie, antiFlingShield
 local showRagdollCountdown
-local PRINTED_BRANDING = "LEAKED BY discord.gg/printed"
+local PRINTED_BRANDING = "MADE BY CHRISxTIERNO"
 local function addPrintedBranding(parent, position, size, textSize)
     if not parent then
         return nil
