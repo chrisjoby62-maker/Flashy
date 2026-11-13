@@ -1,0 +1,319 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UIS = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+
+local settings = {
+	enabled = true,
+	threshold = 500,  -- number, or percent if usePercent is true
+	usePercent = false,
+	height = 1000,    -- studs above where you were
+	tweenTime = 0.6,  -- higher = slower
+}
+
+-- Shawarma palette
+local C = {
+	bg = Color3.fromRGB(58, 34, 20),      -- rotisserie brown
+	bar = Color3.fromRGB(201, 106, 36),   -- toasted pita orange
+	cream = Color3.fromRGB(255, 236, 200),-- garlic sauce cream
+	input = Color3.fromRGB(88, 55, 34),
+	on = Color3.fromRGB(214, 140, 30),    -- turmeric
+	off = Color3.fromRGB(150, 45, 35),    -- chili red
+	stroke = Color3.fromRGB(240, 170, 60),
+}
+
+local inSky = false
+local returnPos = nil
+local align, attachment
+local token = 0
+
+-- UI ----------------------------------------------------------
+local gui = Instance.new("ScreenGui")
+gui.Name = "ShawarmaSafeMode"
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local function round(obj, r)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, r or 10)
+	c.Parent = obj
+end
+
+local function stroke(obj, color, thickness)
+	local s = Instance.new("UIStroke")
+	s.Color = color
+	s.Thickness = thickness or 2
+	s.Parent = obj
+end
+
+-- Main window
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 230, 0, 170)
+frame.Position = UDim2.new(0, 20, 0.5, -85)
+frame.BackgroundColor3 = C.bg
+frame.Parent = gui
+round(frame, 14)
+stroke(frame, C.stroke, 2)
+
+-- Title bar (drag handle)
+local bar = Instance.new("Frame")
+bar.Size = UDim2.new(1, 0, 0, 36)
+bar.BackgroundColor3 = C.bar
+bar.Parent = frame
+round(bar, 14)
+
+local barFix = Instance.new("Frame") -- squares off the bottom corners of the bar
+barFix.Size = UDim2.new(1, 0, 0, 14)
+barFix.Position = UDim2.new(0, 0, 1, -14)
+barFix.BackgroundColor3 = C.bar
+barFix.BorderSizePixel = 0
+barFix.Parent = bar
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -50, 1, 0)
+title.Position = UDim2.new(0, 12, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "🌯 Shawarma Safe Mode"
+title.TextColor3 = C.cream
+title.Font = Enum.Font.FredokaOne
+title.TextSize = 17
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = bar
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 26, 0, 26)
+closeBtn.Position = UDim2.new(1, -32, 0, 5)
+closeBtn.BackgroundColor3 = C.off
+closeBtn.Text = "✕"
+closeBtn.TextColor3 = C.cream
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 14
+closeBtn.Parent = bar
+round(closeBtn, 8)
+
+-- Body
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, -24, 0, 20)
+label.Position = UDim2.new(0, 12, 0, 44)
+label.BackgroundTransparency = 1
+label.Text = "Wrap me up at health:"
+label.TextColor3 = C.cream
+label.Font = Enum.Font.GothamMedium
+label.TextSize = 14
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.Parent = frame
+
+local box = Instance.new("TextBox")
+box.Size = UDim2.new(1, -24, 0, 30)
+box.Position = UDim2.new(0, 12, 0, 66)
+box.Text = tostring(settings.threshold)
+box.PlaceholderText = "e.g. 500 or 30%"
+box.PlaceholderColor3 = Color3.fromRGB(170, 140, 110)
+box.ClearTextOnFocus = false
+box.BackgroundColor3 = C.input
+box.TextColor3 = C.cream
+box.Font = Enum.Font.GothamBold
+box.TextSize = 16
+box.Parent = frame
+round(box, 8)
+stroke(box, C.stroke, 1)
+
+local toggle = Instance.new("TextButton")
+toggle.Size = UDim2.new(1, -24, 0, 32)
+toggle.Position = UDim2.new(0, 12, 0, 104)
+toggle.TextColor3 = C.cream
+toggle.Font = Enum.Font.FredokaOne
+toggle.TextSize = 17
+toggle.Parent = frame
+round(toggle, 10)
+
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, -24, 0, 20)
+status.Position = UDim2.new(0, 12, 1, -26)
+status.BackgroundTransparency = 1
+status.TextColor3 = C.stroke
+status.Font = Enum.Font.GothamMedium
+status.TextSize = 12
+status.Parent = frame
+
+-- Reopen icon
+local icon = Instance.new("TextButton")
+icon.Size = UDim2.new(0, 54, 0, 54)
+icon.BackgroundColor3 = C.bar
+icon.Text = "🌯"
+icon.TextSize = 30
+icon.AutoButtonColor = true
+icon.Visible = false
+icon.Parent = gui
+round(icon, 27)
+stroke(icon, C.stroke, 3)
+
+-- Dragging ----------------------------------------------------
+local function makeDraggable(handle, target, onClick)
+	local dragging, moved = false, false
+	local dragStart, startPos
+
+	handle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+			dragging, moved = true, false
+			dragStart = input.Position
+			startPos = target.Position
+
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+					if not moved and onClick then onClick() end
+				end
+			end)
+		end
+	end)
+
+	UIS.InputChanged:Connect(function(input)
+		if not dragging then return end
+		if input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch then
+			local delta = input.Position - dragStart
+			if delta.Magnitude > 6 then moved = true end
+			if moved then
+				target.Position = UDim2.new(
+					startPos.X.Scale, startPos.X.Offset + delta.X,
+					startPos.Y.Scale, startPos.Y.Offset + delta.Y
+				)
+			end
+		end
+	end)
+end
+
+makeDraggable(bar, frame)
+
+makeDraggable(icon, icon, function()
+	-- click (not drag): reopen the window where the icon is
+	frame.Position = icon.Position
+	frame.Visible = true
+	icon.Visible = false
+end)
+
+closeBtn.Activated:Connect(function()
+	icon.Position = frame.Position
+	frame.Visible = false
+	icon.Visible = true
+end)
+
+-- Logic -------------------------------------------------------
+local currentHum, currentRoot
+
+local function refreshUI()
+	toggle.Text = "Safe Mode: " .. (settings.enabled and "ON" or "OFF")
+	toggle.BackgroundColor3 = settings.enabled and C.on or C.off
+	status.Text = inSky and "☁️ Chilling in the sky" or "🧅 Feet on the ground"
+end
+
+local function getThreshold(hum)
+	if settings.usePercent then
+		return hum.MaxHealth * (settings.threshold / 100)
+	end
+	return settings.threshold
+end
+
+local function cleanup()
+	if align then align:Destroy() align = nil end
+	if attachment then attachment:Destroy() attachment = nil end
+end
+
+local function moveTo(pos, onDone)
+	local tween = TweenService:Create(align, TweenInfo.new(settings.tweenTime, Enum.EasingStyle.Linear), { Position = pos })
+	tween:Play()
+	if onDone then tween.Completed:Connect(onDone) end
+end
+
+local function goSky(root)
+	inSky = true
+	token += 1
+	returnPos = root.Position
+
+	cleanup()
+	attachment = Instance.new("Attachment")
+	attachment.Parent = root
+
+	align = Instance.new("AlignPosition")
+	align.Mode = Enum.PositionAlignmentMode.OneAttachment
+	align.Attachment0 = attachment
+	align.MaxForce = math.huge
+	align.MaxVelocity = math.huge
+	align.Responsiveness = 200
+	align.ApplyAtCenterOfMass = true
+	align.Position = root.Position
+	align.Parent = root
+
+	moveTo(returnPos + Vector3.new(0, settings.height, 0))
+	refreshUI()
+end
+
+local function land()
+	if not align then
+		inSky = false
+		refreshUI()
+		return
+	end
+	inSky = false
+	local myToken = token
+	moveTo(returnPos, function()
+		if token == myToken then cleanup() end
+	end)
+	refreshUI()
+end
+
+local function check()
+	if not (currentHum and currentRoot and currentHum.Health > 0) then return end
+
+	if not settings.enabled then
+		if inSky then land() end
+		return
+	end
+
+	-- once up, you stay up until Safe Mode is turned off
+	if not inSky and currentHum.Health <= getThreshold(currentHum) then
+		goSky(currentRoot)
+	end
+end
+
+local function onCharacter(char)
+	inSky = false
+	token += 1
+	cleanup()
+	currentHum = char:WaitForChild("Humanoid")
+	currentRoot = char:WaitForChild("HumanoidRootPart")
+	currentHum.HealthChanged:Connect(check)
+	currentHum.Died:Connect(function()
+		inSky = false
+		token += 1
+		cleanup()
+		refreshUI()
+	end)
+	refreshUI()
+end
+
+box.FocusLost:Connect(function()
+	local text = box.Text:gsub("%s", "")
+	local isPercent = text:sub(-1) == "%"
+	local num = tonumber(isPercent and text:sub(1, -2) or text)
+	if num and num > 0 then
+		settings.threshold = num
+		settings.usePercent = isPercent
+	else
+		box.Text = tostring(settings.threshold) .. (settings.usePercent and "%" or "")
+	end
+	check()
+end)
+
+toggle.Activated:Connect(function()
+	settings.enabled = not settings.enabled
+	refreshUI()
+	check()
+end)
+
+player.CharacterAdded:Connect(onCharacter)
+if player.Character then onCharacter(player.Character) end
+refreshUI()
