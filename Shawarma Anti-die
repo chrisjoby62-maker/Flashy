@@ -1,34 +1,40 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
 local settings = {
 	enabled = true,
-	threshold = 500,  -- number, or percent if usePercent is true
+	threshold = 1000,
 	usePercent = false,
-	height = 1000,    -- studs above where you were
-	tweenTime = 0.6,  -- higher = slower
+	height = 1000,
+	tweenTime = 0.6,
 }
 
--- Shawarma palette
 local C = {
-	bg = Color3.fromRGB(58, 34, 20),      -- rotisserie brown
-	bar = Color3.fromRGB(201, 106, 36),   -- toasted pita orange
-	cream = Color3.fromRGB(255, 236, 200),-- garlic sauce cream
-	input = Color3.fromRGB(88, 55, 34),
-	on = Color3.fromRGB(214, 140, 30),    -- turmeric
-	off = Color3.fromRGB(150, 45, 35),    -- chili red
-	stroke = Color3.fromRGB(240, 170, 60),
+	bgTop = Color3.fromRGB(78, 44, 24),
+	bgBottom = Color3.fromRGB(40, 22, 12),
+	bar = Color3.fromRGB(226, 120, 36),
+	barDark = Color3.fromRGB(170, 70, 22),
+	cream = Color3.fromRGB(255, 240, 210),
+	sauce = Color3.fromRGB(255, 248, 232),
+	input = Color3.fromRGB(100, 62, 38),
+	on = Color3.fromRGB(236, 160, 40),
+	off = Color3.fromRGB(150, 45, 35),
+	gold = Color3.fromRGB(255, 196, 70),
+	sky = Color3.fromRGB(130, 205, 255),
+	dark = Color3.fromRGB(30, 16, 8),
 }
 
 local inSky = false
 local returnPos = nil
 local align, attachment
 local token = 0
+local currentHum, currentRoot, currentChar
+local brokenBarriers = {}
 
--- UI ----------------------------------------------------------
 local gui = Instance.new("ScreenGui")
 gui.Name = "ShawarmaSafeMode"
 gui.ResetOnSpawn = false
@@ -38,116 +44,218 @@ local function round(obj, r)
 	local c = Instance.new("UICorner")
 	c.CornerRadius = UDim.new(0, r or 10)
 	c.Parent = obj
+	return c
 end
 
 local function stroke(obj, color, thickness)
 	local s = Instance.new("UIStroke")
 	s.Color = color
 	s.Thickness = thickness or 2
+	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	s.Parent = obj
+	return s
 end
 
--- Main window
+local function gradient(obj, c1, c2, rotation)
+	local g = Instance.new("UIGradient")
+	g.Color = ColorSequence.new(c1, c2)
+	g.Rotation = rotation or 90
+	g.Parent = obj
+	return g
+end
+
+-- Main window -------------------------------------------------
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 230, 0, 170)
-frame.Position = UDim2.new(0, 20, 0.5, -85)
-frame.BackgroundColor3 = C.bg
+frame.Size = UDim2.new(0, 250, 0, 200)
+frame.Position = UDim2.new(0, 20, 0.5, -100)
+frame.BackgroundColor3 = Color3.new(1, 1, 1)
 frame.Parent = gui
-round(frame, 14)
-stroke(frame, C.stroke, 2)
+round(frame, 16)
+gradient(frame, C.bgTop, C.bgBottom, 90)
 
--- Title bar (drag handle)
+local frameStroke = stroke(frame, C.gold, 3)
+gradient(frameStroke, C.gold, C.bar, 45)
+
+-- Title bar
 local bar = Instance.new("Frame")
-bar.Size = UDim2.new(1, 0, 0, 36)
-bar.BackgroundColor3 = C.bar
+bar.Size = UDim2.new(1, 0, 0, 44)
+bar.BackgroundColor3 = Color3.new(1, 1, 1)
 bar.Parent = frame
-round(bar, 14)
+round(bar, 16)
+gradient(bar, C.bar, C.barDark, 90)
 
-local barFix = Instance.new("Frame") -- squares off the bottom corners of the bar
-barFix.Size = UDim2.new(1, 0, 0, 14)
-barFix.Position = UDim2.new(0, 0, 1, -14)
-barFix.BackgroundColor3 = C.bar
+local barFix = Instance.new("Frame")
+barFix.Size = UDim2.new(1, 0, 0, 16)
+barFix.Position = UDim2.new(0, 0, 1, -16)
+barFix.BackgroundColor3 = Color3.new(1, 1, 1)
 barFix.BorderSizePixel = 0
 barFix.Parent = bar
+gradient(barFix, C.barDark, C.barDark, 90)
+
+local wrapIcon = Instance.new("TextLabel")
+wrapIcon.Size = UDim2.new(0, 30, 0, 30)
+wrapIcon.Position = UDim2.new(0, 8, 0, 7)
+wrapIcon.BackgroundTransparency = 1
+wrapIcon.Text = "🌯"
+wrapIcon.TextSize = 24
+wrapIcon.Parent = bar
 
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -50, 1, 0)
-title.Position = UDim2.new(0, 12, 0, 0)
+title.Size = UDim2.new(1, -86, 0, 30)
+title.Position = UDim2.new(0, 40, 0, 7)
 title.BackgroundTransparency = 1
-title.Text = "🌯 Shawarma Safe Mode"
+title.Text = "SHAWARMA SAFEMODE"
 title.TextColor3 = C.cream
-title.Font = Enum.Font.FredokaOne
-title.TextSize = 17
+title.Font = Enum.Font.LuckiestGuy
+title.TextScaled = true
+title.TextStrokeColor3 = C.dark
+title.TextStrokeTransparency = 0.2
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = bar
+local titleLimit = Instance.new("UITextSizeConstraint")
+titleLimit.MaxTextSize = 22
+titleLimit.Parent = title
 
 local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 26, 0, 26)
-closeBtn.Position = UDim2.new(1, -32, 0, 5)
+closeBtn.Size = UDim2.new(0, 28, 0, 28)
+closeBtn.Position = UDim2.new(1, -36, 0, 8)
 closeBtn.BackgroundColor3 = C.off
 closeBtn.Text = "✕"
 closeBtn.TextColor3 = C.cream
 closeBtn.Font = Enum.Font.GothamBold
 closeBtn.TextSize = 14
 closeBtn.Parent = bar
-round(closeBtn, 8)
+round(closeBtn, 14)
+stroke(closeBtn, C.dark, 2)
 
--- Body
+-- Garlic sauce drips under the title bar
+local drips = {
+	{ x = 22, w = 14, h = 12 },
+	{ x = 74, w = 12, h = 20 },
+	{ x = 132, w = 16, h = 14 },
+	{ x = 188, w = 12, h = 22 },
+	{ x = 224, w = 10, h = 10 },
+}
+for _, d in ipairs(drips) do
+	local drip = Instance.new("Frame")
+	drip.Size = UDim2.new(0, d.w, 0, d.h + 8)
+	drip.Position = UDim2.new(0, d.x, 0, 36)
+	drip.BackgroundColor3 = C.sauce
+	drip.BorderSizePixel = 0
+	drip.ZIndex = 2
+	drip.Parent = frame
+	round(drip, d.w // 2)
+end
+
+local sauceLine = Instance.new("Frame")
+sauceLine.Size = UDim2.new(1, 0, 0, 8)
+sauceLine.Position = UDim2.new(0, 0, 0, 36)
+sauceLine.BackgroundColor3 = C.sauce
+sauceLine.BorderSizePixel = 0
+sauceLine.ZIndex = 2
+sauceLine.Parent = frame
+
+-- Trigger health label + input
 local label = Instance.new("TextLabel")
-label.Size = UDim2.new(1, -24, 0, 20)
-label.Position = UDim2.new(0, 12, 0, 44)
+label.Size = UDim2.new(1, -28, 0, 16)
+label.Position = UDim2.new(0, 14, 0, 70)
 label.BackgroundTransparency = 1
-label.Text = "Wrap me up at health:"
-label.TextColor3 = C.cream
-label.Font = Enum.Font.GothamMedium
-label.TextSize = 14
+label.Text = "WRAP ME UP AT HEALTH"
+label.TextColor3 = C.gold
+label.Font = Enum.Font.GothamBold
+label.TextSize = 12
 label.TextXAlignment = Enum.TextXAlignment.Left
 label.Parent = frame
 
 local box = Instance.new("TextBox")
-box.Size = UDim2.new(1, -24, 0, 30)
-box.Position = UDim2.new(0, 12, 0, 66)
+box.Size = UDim2.new(1, -28, 0, 34)
+box.Position = UDim2.new(0, 14, 0, 90)
 box.Text = tostring(settings.threshold)
 box.PlaceholderText = "e.g. 500 or 30%"
 box.PlaceholderColor3 = Color3.fromRGB(170, 140, 110)
 box.ClearTextOnFocus = false
 box.BackgroundColor3 = C.input
 box.TextColor3 = C.cream
-box.Font = Enum.Font.GothamBold
-box.TextSize = 16
+box.Font = Enum.Font.FredokaOne
+box.TextSize = 18
 box.Parent = frame
-round(box, 8)
-stroke(box, C.stroke, 1)
+round(box, 17)
+stroke(box, C.gold, 1.5)
 
+-- Switch
 local toggle = Instance.new("TextButton")
-toggle.Size = UDim2.new(1, -24, 0, 32)
-toggle.Position = UDim2.new(0, 12, 0, 104)
-toggle.TextColor3 = C.cream
-toggle.Font = Enum.Font.FredokaOne
-toggle.TextSize = 17
+toggle.Size = UDim2.new(1, -28, 0, 36)
+toggle.Position = UDim2.new(0, 14, 0, 134)
+toggle.Text = ""
+toggle.AutoButtonColor = false
+toggle.BackgroundColor3 = C.on
 toggle.Parent = frame
-round(toggle, 10)
+round(toggle, 18)
+stroke(toggle, C.dark, 2)
+
+local toggleText = Instance.new("TextLabel")
+toggleText.Size = UDim2.new(1, 0, 1, 0)
+toggleText.BackgroundTransparency = 1
+toggleText.TextColor3 = C.cream
+toggleText.Font = Enum.Font.LuckiestGuy
+toggleText.TextSize = 17
+toggleText.TextStrokeColor3 = C.dark
+toggleText.TextStrokeTransparency = 0.4
+toggleText.Parent = toggle
+
+local knob = Instance.new("Frame")
+knob.Size = UDim2.new(0, 28, 0, 28)
+knob.BackgroundColor3 = C.cream
+knob.Parent = toggle
+round(knob, 14)
+stroke(knob, C.dark, 2)
+
+local knobEmoji = Instance.new("TextLabel")
+knobEmoji.Size = UDim2.new(1, 0, 1, 0)
+knobEmoji.BackgroundTransparency = 1
+knobEmoji.Text = "🌯"
+knobEmoji.TextSize = 16
+knobEmoji.Parent = knob
+
+-- Status pill
+local pill = Instance.new("Frame")
+pill.Size = UDim2.new(1, -28, 0, 20)
+pill.Position = UDim2.new(0, 14, 1, -28)
+pill.BackgroundColor3 = C.dark
+pill.BackgroundTransparency = 0.35
+pill.Parent = frame
+round(pill, 10)
+
+local dot = Instance.new("Frame")
+dot.Size = UDim2.new(0, 10, 0, 10)
+dot.Position = UDim2.new(0, 8, 0.5, -5)
+dot.BackgroundColor3 = C.on
+dot.Parent = pill
+round(dot, 5)
 
 local status = Instance.new("TextLabel")
-status.Size = UDim2.new(1, -24, 0, 20)
-status.Position = UDim2.new(0, 12, 1, -26)
+status.Size = UDim2.new(1, -28, 1, 0)
+status.Position = UDim2.new(0, 24, 0, 0)
 status.BackgroundTransparency = 1
-status.TextColor3 = C.stroke
+status.TextColor3 = C.cream
 status.Font = Enum.Font.GothamMedium
 status.TextSize = 12
-status.Parent = frame
+status.TextXAlignment = Enum.TextXAlignment.Left
+status.Parent = pill
 
 -- Reopen icon
 local icon = Instance.new("TextButton")
-icon.Size = UDim2.new(0, 54, 0, 54)
-icon.BackgroundColor3 = C.bar
+icon.Size = UDim2.new(0, 58, 0, 58)
+icon.BackgroundColor3 = Color3.new(1, 1, 1)
 icon.Text = "🌯"
-icon.TextSize = 30
+icon.TextSize = 32
 icon.AutoButtonColor = true
 icon.Visible = false
 icon.Parent = gui
-round(icon, 27)
-stroke(icon, C.stroke, 3)
+round(icon, 29)
+gradient(icon, C.bar, C.barDark, 90)
+local iconStroke = stroke(icon, C.gold, 3)
+gradient(iconStroke, C.gold, C.bar, 45)
 
 -- Dragging ----------------------------------------------------
 local function makeDraggable(handle, target, onClick)
@@ -189,7 +297,6 @@ end
 makeDraggable(bar, frame)
 
 makeDraggable(icon, icon, function()
-	-- click (not drag): reopen the window where the icon is
 	frame.Position = icon.Position
 	frame.Visible = true
 	icon.Visible = false
@@ -201,13 +308,29 @@ closeBtn.Activated:Connect(function()
 	icon.Visible = true
 end)
 
--- Logic -------------------------------------------------------
-local currentHum, currentRoot
-
+-- UI refresh --------------------------------------------------
 local function refreshUI()
-	toggle.Text = "Safe Mode: " .. (settings.enabled and "ON" or "OFF")
-	toggle.BackgroundColor3 = settings.enabled and C.on or C.off
-	status.Text = inSky and "☁️ Chilling in the sky" or "🧅 Feet on the ground"
+	local info = TweenInfo.new(0.2, Enum.EasingStyle.Quad)
+
+	if settings.enabled then
+		toggleText.Text = "SAFE MODE ON"
+		toggleText.Position = UDim2.new(0, 14, 0, 0)
+		TweenService:Create(toggle, info, { BackgroundColor3 = C.on }):Play()
+		TweenService:Create(knob, info, { Position = UDim2.new(1, -32, 0.5, -14) }):Play()
+	else
+		toggleText.Text = "SAFE MODE OFF"
+		toggleText.Position = UDim2.new(0, -14, 0, 0)
+		TweenService:Create(toggle, info, { BackgroundColor3 = C.off }):Play()
+		TweenService:Create(knob, info, { Position = UDim2.new(0, 4, 0.5, -14) }):Play()
+	end
+
+	if inSky then
+		status.Text = "Chilling in the sky"
+		dot.BackgroundColor3 = C.sky
+	else
+		status.Text = "Feet on the ground"
+		dot.BackgroundColor3 = C.on
+	end
 end
 
 local function getThreshold(hum)
@@ -217,6 +340,42 @@ local function getThreshold(hum)
 	return settings.threshold
 end
 
+-- Invisible barrier breaker -----------------------------------
+local function breakBarriers()
+	for _, d in ipairs(workspace:GetDescendants()) do
+		if d:IsA("BasePart") and not d:IsA("Terrain")
+			and d.CanCollide and d.Transparency >= 0.9 then
+			local model = d:FindFirstAncestorOfClass("Model")
+			local isCharacter = model and model:FindFirstChildOfClass("Humanoid")
+			if not isCharacter then
+				brokenBarriers[d] = true
+				d.CanCollide = false
+			end
+		end
+	end
+end
+
+local function restoreBarriers()
+	for part in pairs(brokenBarriers) do
+		if part and part.Parent then
+			part.CanCollide = true
+		end
+	end
+	brokenBarriers = {}
+end
+
+-- noclip while in the sky
+RunService.Stepped:Connect(function()
+	if inSky and currentChar then
+		for _, p in ipairs(currentChar:GetDescendants()) do
+			if p:IsA("BasePart") then
+				p.CanCollide = false
+			end
+		end
+	end
+end)
+
+-- Safe mode logic ---------------------------------------------
 local function cleanup()
 	if align then align:Destroy() align = nil end
 	if attachment then attachment:Destroy() attachment = nil end
@@ -233,6 +392,7 @@ local function goSky(root)
 	token += 1
 	returnPos = root.Position
 
+	breakBarriers()
 	cleanup()
 	attachment = Instance.new("Attachment")
 	attachment.Parent = root
@@ -254,13 +414,17 @@ end
 local function land()
 	if not align then
 		inSky = false
+		restoreBarriers()
 		refreshUI()
 		return
 	end
 	inSky = false
 	local myToken = token
 	moveTo(returnPos, function()
-		if token == myToken then cleanup() end
+		if token == myToken then
+			cleanup()
+			restoreBarriers()
+		end
 	end)
 	refreshUI()
 end
@@ -283,6 +447,8 @@ local function onCharacter(char)
 	inSky = false
 	token += 1
 	cleanup()
+	restoreBarriers()
+	currentChar = char
 	currentHum = char:WaitForChild("Humanoid")
 	currentRoot = char:WaitForChild("HumanoidRootPart")
 	currentHum.HealthChanged:Connect(check)
@@ -290,6 +456,7 @@ local function onCharacter(char)
 		inSky = false
 		token += 1
 		cleanup()
+		restoreBarriers()
 		refreshUI()
 	end)
 	refreshUI()
